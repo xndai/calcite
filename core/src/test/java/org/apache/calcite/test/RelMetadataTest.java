@@ -24,7 +24,6 @@ import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.plan.RelOptPredicateList;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.plan.RelTraitSet;
-import org.apache.calcite.rel.InvalidRelException;
 import org.apache.calcite.rel.RelCollation;
 import org.apache.calcite.rel.RelCollationTraitDef;
 import org.apache.calcite.rel.RelCollations;
@@ -42,7 +41,6 @@ import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Minus;
 import org.apache.calcite.rel.core.Project;
-import org.apache.calcite.rel.core.SemiJoin;
 import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Union;
@@ -91,7 +89,6 @@ import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.BuiltInMethod;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.ImmutableIntList;
-import org.apache.calcite.util.TestUtil;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -180,6 +177,13 @@ public class RelMetadataTest extends SqlToRelTestBase {
   // ----------------------------------------------------------------------
 
   private RelNode convertSql(String sql) {
+    final RelRoot root = tester.convertSqlToRel(sql);
+    root.rel.getCluster().setMetadataProvider(DefaultRelMetadataProvider.INSTANCE);
+    return root.rel;
+  }
+
+  private RelNode convertSql(String sql, boolean typeCoercion) {
+    final Tester tester = typeCoercion ? this.tester : this.strictTester;
     final RelRoot root = tester.convertSqlToRel(sql);
     root.rel.getCluster().setMetadataProvider(DefaultRelMetadataProvider.INSTANCE);
     return root.rel;
@@ -640,8 +644,8 @@ public class RelMetadataTest extends SqlToRelTestBase {
   }
 
   @Test public void testRowCountSortLimit0() {
-    final String sql = "select * from emp order by ename limit 10";
-    checkRowCount(sql, 10d, 0D, 10d);
+    final String sql = "select * from emp order by ename limit 0";
+    checkRowCount(sql, 1d, 0D, 0d);
   }
 
   @Test public void testRowCountSortLimitOffset() {
@@ -925,6 +929,21 @@ public class RelMetadataTest extends SqlToRelTestBase {
     assertUniqueConsistent(rel);
   }
 
+  @Test public void testFullOuterJoinUniqueness1() {
+    final String sql = "select e.empno, d.deptno \n"
+        + "from (select cast(null as int) empno from sales.emp "
+        + " where empno = 10 group by cast(null as int)) as e \n"
+        + "full outer join (select cast (null as int) deptno from sales.dept "
+        + "group by cast(null as int)) as d on e.empno = d.deptno \n"
+        + "group by e.empno, d.deptno";
+    RelNode rel = convertSql(sql);
+    final RelMetadataQuery mq = RelMetadataQuery.instance();
+    final ImmutableBitSet allCols =
+        ImmutableBitSet.range(0, rel.getRowType().getFieldCount());
+    Boolean areGroupByKeysUnique = mq.areColumnsUnique(rel.getInput(0), allCols);
+    assertThat(areGroupByKeysUnique, is(false));
+  }
+
   @Test public void testGroupBy() {
     RelNode rel = convertSql("select deptno, count(*), sum(sal) from emp\n"
             + "group by deptno");
@@ -1116,12 +1135,8 @@ public class RelMetadataTest extends SqlToRelTestBase {
     final ImmutableIntList leftKeys = ImmutableIntList.of(2);
     final ImmutableIntList rightKeys = ImmutableIntList.of(0);
     final EnumerableMergeJoin join;
-    try {
-      join = EnumerableMergeJoin.create(project, deptSort,
-          rexBuilder.makeLiteral(true), leftKeys, rightKeys, JoinRelType.INNER);
-    } catch (InvalidRelException e) {
-      throw TestUtil.rethrow(e);
-    }
+    join = EnumerableMergeJoin.create(project, deptSort,
+        rexBuilder.makeLiteral(true), leftKeys, rightKeys, JoinRelType.INNER);
     collations =
         RelMdCollation.mergeJoin(mq, project, deptSort, leftKeys,
             rightKeys);
@@ -1421,7 +1436,7 @@ public class RelMetadataTest extends SqlToRelTestBase {
     relBuilder.semiJoin(
         relBuilder.equals(relBuilder.field(2, 0, "DEPTNO"),
             relBuilder.field(2, 1, "DEPTNO")));
-    final SemiJoin semiJoin = (SemiJoin) relBuilder.build();
+    final LogicalJoin semiJoin = (LogicalJoin) relBuilder.build();
 
     predicates = mq.getPulledUpPredicates(semiJoin);
     assertThat(predicates.pulledUpPredicates, sortsAs("[=($0, 1)]"));
@@ -1542,7 +1557,8 @@ public class RelMetadataTest extends SqlToRelTestBase {
     // Lock to ensure that only one test is using this method at a time.
     try (JdbcAdapterTest.LockWrapper ignore =
              JdbcAdapterTest.LockWrapper.lock(LOCK)) {
-      final RelNode rel = convertSql(sql);
+      // FIXME: fix timeout when enable implicit type coercion.
+      final RelNode rel = convertSql(sql, false);
       final RelMetadataQuery mq = RelMetadataQuery.instance();
       RelOptPredicateList inputSet = mq.getPulledUpPredicates(rel.getInput(0));
       assertThat(inputSet.pulledUpPredicates.size(), is(18));

@@ -27,9 +27,9 @@ import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Intersect;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinInfo;
+import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Minus;
 import org.apache.calcite.rel.core.Project;
-import org.apache.calcite.rel.core.SemiJoin;
 import org.apache.calcite.rel.core.SetOp;
 import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.core.TableScan;
@@ -246,6 +246,11 @@ public class RelMdColumnUniqueness
     final RelNode left = rel.getLeft();
     final RelNode right = rel.getRight();
 
+    // Semi or anti join should ignore uniqueness of the right input.
+    if (!rel.getJoinType().projectsRight()) {
+      return mq.areColumnsUnique(left, columns, ignoreNulls);
+    }
+
     // Divide up the input column mask into column masks for the left and
     // right sides of the join
     final Pair<ImmutableBitSet, ImmutableBitSet> leftAndRightColumns =
@@ -253,6 +258,13 @@ public class RelMdColumnUniqueness
             columns);
     final ImmutableBitSet leftColumns = leftAndRightColumns.left;
     final ImmutableBitSet rightColumns = leftAndRightColumns.right;
+
+    // for FULL OUTER JOIN if columns contain column from both inputs it is not
+    // guaranteed that the result will be unique
+    if (!ignoreNulls && rel.getJoinType() == JoinRelType.FULL
+        && leftColumns.cardinality() > 0 && rightColumns.cardinality() > 0) {
+      return false;
+    }
 
     // If the original column mask contains columns from both the left and
     // right hand side, then the columns are unique if and only if they're
@@ -298,13 +310,6 @@ public class RelMdColumnUniqueness
     }
 
     throw new AssertionError();
-  }
-
-  public Boolean areColumnsUnique(SemiJoin rel, RelMetadataQuery mq,
-      ImmutableBitSet columns, boolean ignoreNulls) {
-    // only return the unique keys from the LHS since a semijoin only
-    // returns the LHS
-    return mq.areColumnsUnique(rel.getLeft(), columns, ignoreNulls);
   }
 
   public Boolean areColumnsUnique(Aggregate rel, RelMetadataQuery mq,

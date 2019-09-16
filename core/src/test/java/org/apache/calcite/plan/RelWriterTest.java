@@ -19,26 +19,39 @@ package org.apache.calcite.plan;
 import org.apache.calcite.adapter.java.ReflectiveSchema;
 import org.apache.calcite.rel.RelCollations;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelShuttleImpl;
 import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.JoinRelType;
+import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.externalize.RelJsonReader;
 import org.apache.calcite.rel.externalize.RelJsonWriter;
 import org.apache.calcite.rel.logical.LogicalAggregate;
+import org.apache.calcite.rel.logical.LogicalCalc;
 import org.apache.calcite.rel.logical.LogicalFilter;
 import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rel.logical.LogicalTableScan;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexCorrelVariable;
 import org.apache.calcite.rex.RexFieldCollation;
+import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexProgramBuilder;
 import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.SqlExplainFormat;
 import org.apache.calcite.sql.SqlExplainLevel;
 import org.apache.calcite.sql.SqlWindow;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+import org.apache.calcite.sql.fun.SqlTrimFunction;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.test.JdbcTest;
+import org.apache.calcite.test.RelBuilderTest;
+import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
+import org.apache.calcite.tools.RelBuilder;
+import org.apache.calcite.util.Holder;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.TestUtil;
 
@@ -75,7 +88,11 @@ public class RelWriterTest {
       + "      \"id\": \"1\",\n"
       + "      \"relOp\": \"LogicalFilter\",\n"
       + "      \"condition\": {\n"
-      + "        \"op\": \"=\",\n"
+      + "        \"op\": {\n"
+      + "          \"name\": \"=\",\n"
+      + "          \"kind\": \"EQUALS\",\n"
+      + "          \"syntax\": \"BINARY\"\n"
+      + "        },\n"
       + "        \"operands\": [\n"
       + "          {\n"
       + "            \"input\": 1,\n"
@@ -99,7 +116,11 @@ public class RelWriterTest {
       + "      ],\n"
       + "      \"aggs\": [\n"
       + "        {\n"
-      + "          \"agg\": \"COUNT\",\n"
+      + "          \"agg\": {\n"
+      + "            \"name\": \"COUNT\",\n"
+      + "            \"kind\": \"COUNT\",\n"
+      + "            \"syntax\": \"FUNCTION_STAR\"\n"
+      + "          },\n"
       + "          \"type\": {\n"
       + "            \"type\": \"BIGINT\",\n"
       + "            \"nullable\": false\n"
@@ -107,16 +128,22 @@ public class RelWriterTest {
       + "          \"distinct\": true,\n"
       + "          \"operands\": [\n"
       + "            1\n"
-      + "          ]\n"
+      + "          ],\n"
+      + "          \"name\": \"c\"\n"
       + "        },\n"
       + "        {\n"
-      + "          \"agg\": \"COUNT\",\n"
+      + "          \"agg\": {\n"
+      + "            \"name\": \"COUNT\",\n"
+      + "            \"kind\": \"COUNT\",\n"
+      + "            \"syntax\": \"FUNCTION_STAR\"\n"
+      + "          },\n"
       + "          \"type\": {\n"
       + "            \"type\": \"BIGINT\",\n"
       + "            \"nullable\": false\n"
       + "          },\n"
       + "          \"distinct\": false,\n"
-      + "          \"operands\": []\n"
+      + "          \"operands\": [],\n"
+      + "          \"name\": \"d\"\n"
       + "        }\n"
       + "      ]\n"
       + "    }\n"
@@ -138,7 +165,11 @@ public class RelWriterTest {
       + "      \"id\": \"1\",\n"
       + "      \"relOp\": \"LogicalFilter\",\n"
       + "      \"condition\": {\n"
-      + "        \"op\": \"=\",\n"
+      + "        \"op\": {"
+      + "            \"name\": \"=\",\n"
+      + "            \"kind\": \"EQUALS\",\n"
+      + "            \"syntax\": \"BINARY\"\n"
+      + "          },\n"
       + "        \"operands\": [\n"
       + "          {\n"
       + "            \"input\": 1,\n"
@@ -159,7 +190,11 @@ public class RelWriterTest {
       + "      ],\n"
       + "      \"aggs\": [\n"
       + "        {\n"
-      + "          \"agg\": \"COUNT\",\n"
+      + "        \"agg\": {\n"
+      + "            \"name\": \"COUNT\",\n"
+      + "            \"kind\": \"COUNT\",\n"
+      + "            \"syntax\": \"FUNCTION_STAR\"\n"
+      + "          },\n"
       + "          \"type\": {\n"
       + "            \"type\": \"BIGINT\",\n"
       + "            \"nullable\": false\n"
@@ -170,7 +205,11 @@ public class RelWriterTest {
       + "          ]\n"
       + "        },\n"
       + "        {\n"
-      + "          \"agg\": \"COUNT\",\n"
+      + "        \"agg\": {\n"
+      + "            \"name\": \"COUNT\",\n"
+      + "            \"kind\": \"COUNT\",\n"
+      + "            \"syntax\": \"FUNCTION_STAR\"\n"
+      + "          },\n"
       + "          \"type\": {\n"
       + "            \"type\": \"BIGINT\",\n"
       + "            \"nullable\": false\n"
@@ -208,7 +247,11 @@ public class RelWriterTest {
       + "          \"name\": \"$0\"\n"
       + "        },\n"
       + "        {\n"
-      + "          \"op\": \"COUNT\",\n"
+      + "          \"op\": {\n"
+      + "            \"name\": \"COUNT\",\n"
+      + "            \"kind\": \"COUNT\",\n"
+      + "            \"syntax\": \"FUNCTION_STAR\"\n"
+      + "          },\n"
       + "          \"operands\": [\n"
       + "            {\n"
       + "              \"input\": 0,\n"
@@ -246,7 +289,11 @@ public class RelWriterTest {
       + "          }\n"
       + "        },\n"
       + "        {\n"
-      + "          \"op\": \"SUM\",\n"
+      + "          \"op\": {\n"
+      + "            \"name\": \"SUM\",\n"
+      + "            \"kind\": \"SUM\",\n"
+      + "            \"syntax\": \"FUNCTION\"\n"
+      + "          },\n"
       + "          \"operands\": [\n"
       + "            {\n"
       + "              \"input\": 0,\n"
@@ -413,7 +460,7 @@ public class RelWriterTest {
         });
 
     assertThat(s,
-        isLinux("LogicalAggregate(group=[{0}], agg#0=[COUNT(DISTINCT $1)], agg#1=[COUNT()])\n"
+        isLinux("LogicalAggregate(group=[{0}], c=[COUNT(DISTINCT $1)], d=[COUNT()])\n"
             + "  LogicalFilter(condition=[=($1, 10)])\n"
             + "    LogicalTableScan(table=[[hr, emps]])\n"));
   }
@@ -471,6 +518,207 @@ public class RelWriterTest {
         isLinux("LogicalAggregate(group=[{0}], agg#0=[COUNT(DISTINCT $1)], agg#1=[COUNT()])\n"
             + "  LogicalFilter(condition=[=($1, null:INTEGER)])\n"
             + "    LogicalTableScan(table=[[hr, emps]])\n"));
+  }
+
+  @Test public void testTrim() {
+    final FrameworkConfig config = RelBuilderTest.config().build();
+    final RelBuilder b = RelBuilder.create(config);
+    final RelNode rel =
+        b.scan("EMP")
+            .project(
+                b.alias(
+                    b.call(SqlStdOperatorTable.TRIM,
+                        b.literal(SqlTrimFunction.Flag.BOTH),
+                        b.literal(" "),
+                        b.field("ENAME")),
+                    "trimmed_ename"))
+            .build();
+
+    RelJsonWriter jsonWriter = new RelJsonWriter();
+    rel.explain(jsonWriter);
+    String relJson = jsonWriter.asString();
+    final RelOptSchema schema = getSchema(rel);
+    final String s = deserializeAndDumpToTextFormat(schema, relJson);
+    final String expected = ""
+        + "LogicalProject(trimmed_ename=[TRIM(FLAG(BOTH), ' ', $1)])\n"
+        + "  LogicalTableScan(table=[[scott, EMP]])\n";
+    assertThat(s, isLinux(expected));
+  }
+
+  @Test public void testPlusOperator() {
+    final FrameworkConfig config = RelBuilderTest.config().build();
+    final RelBuilder builder = RelBuilder.create(config);
+    final RelNode rel = builder
+        .scan("EMP")
+        .project(
+            builder.call(SqlStdOperatorTable.PLUS,
+                builder.field("SAL"),
+                builder.literal(10)))
+        .build();
+    RelJsonWriter jsonWriter = new RelJsonWriter();
+    rel.explain(jsonWriter);
+    String relJson = jsonWriter.asString();
+    String s = deserializeAndDumpToTextFormat(getSchema(rel), relJson);
+    final String expected = ""
+        + "LogicalProject($f0=[+($5, 10)])\n"
+        + "  LogicalTableScan(table=[[scott, EMP]])\n";
+    assertThat(s, isLinux(expected));
+  }
+
+  @Test public void testAggregateWithAlias() {
+    final FrameworkConfig config = RelBuilderTest.config().build();
+    final RelBuilder builder = RelBuilder.create(config);
+    // The rel node stands for sql: SELECT max(SAL) as max_sal from EMP group by JOB;
+    final RelNode rel = builder
+        .scan("EMP")
+        .project(
+            builder.field("JOB"),
+            builder.field("SAL"))
+        .aggregate(
+            builder.groupKey("JOB"),
+            builder.max("max_sal", builder.field("SAL")))
+        .project(
+            builder.field("max_sal"))
+        .build();
+    final RelJsonWriter jsonWriter = new RelJsonWriter();
+    rel.explain(jsonWriter);
+    final String relJson = jsonWriter.asString();
+    String s = deserializeAndDumpToTextFormat(getSchema(rel), relJson);
+    final String expected = ""
+        + "LogicalProject(max_sal=[$1])\n"
+        + "  LogicalAggregate(group=[{0}], max_sal=[MAX($1)])\n"
+        + "    LogicalProject(JOB=[$2], SAL=[$5])\n"
+        + "      LogicalTableScan(table=[[scott, EMP]])\n";
+
+    assertThat(s, isLinux(expected));
+  }
+
+  @Test public void testAggregateWithoutAlias() {
+    final FrameworkConfig config = RelBuilderTest.config().build();
+    final RelBuilder builder = RelBuilder.create(config);
+    // The rel node stands for sql: SELECT max(SAL) from EMP group by JOB;
+    final RelNode rel = builder
+        .scan("EMP")
+        .project(
+            builder.field("JOB"),
+            builder.field("SAL"))
+        .aggregate(
+            builder.groupKey("JOB"),
+            builder.max(builder.field("SAL")))
+        .project(
+            builder.field(1))
+        .build();
+    final RelJsonWriter jsonWriter = new RelJsonWriter();
+    rel.explain(jsonWriter);
+    final String relJson = jsonWriter.asString();
+    String s = deserializeAndDumpToTextFormat(getSchema(rel), relJson);
+    final String expected = ""
+        + "LogicalProject($f1=[$1])\n"
+        + "  LogicalAggregate(group=[{0}], agg#0=[MAX($1)])\n"
+        + "    LogicalProject(JOB=[$2], SAL=[$5])\n"
+        + "      LogicalTableScan(table=[[scott, EMP]])\n";
+
+    assertThat(s, isLinux(expected));
+  }
+
+  @Test public void testCalc() {
+    final FrameworkConfig config = RelBuilderTest.config().build();
+    final RelBuilder builder = RelBuilder.create(config);
+    final RexBuilder rexBuilder = builder.getRexBuilder();
+    final LogicalTableScan scan = (LogicalTableScan) builder.scan("EMP").build();
+    final RexProgramBuilder programBuilder =
+        new RexProgramBuilder(scan.getRowType(), rexBuilder);
+    final RelDataTypeField field = scan.getRowType().getField("SAL", false, false);
+    programBuilder.addIdentity();
+    programBuilder.addCondition(
+        rexBuilder.makeCall(
+            SqlStdOperatorTable.GREATER_THAN,
+            new RexInputRef(field.getIndex(), field.getType()),
+            builder.literal(10)
+        )
+    );
+    final LogicalCalc calc = LogicalCalc.create(scan, programBuilder.getProgram());
+    String relJson = RelOptUtil.dumpPlan("", calc,
+        SqlExplainFormat.JSON, SqlExplainLevel.EXPPLAN_ATTRIBUTES);
+    String s =
+        Frameworks.withPlanner((cluster, relOptSchema, rootSchema) -> {
+          final RelJsonReader reader = new RelJsonReader(
+              cluster, getSchema(calc), rootSchema);
+          RelNode node;
+          try {
+            node = reader.read(relJson);
+          } catch (IOException e) {
+            throw TestUtil.rethrow(e);
+          }
+          return RelOptUtil.dumpPlan("", node, SqlExplainFormat.TEXT,
+              SqlExplainLevel.EXPPLAN_ATTRIBUTES);
+        });
+    final String expected =
+        "LogicalCalc(expr#0..7=[{inputs}], expr#8=[10], expr#9=[>($t5, $t8)],"
+            + " proj#0..7=[{exprs}], $condition=[$t9])\n"
+            + "  LogicalTableScan(table=[[scott, EMP]])\n";
+    assertThat(s, isLinux(expected));
+  }
+
+  @Test public void testCorrelateQuery() {
+    final FrameworkConfig config = RelBuilderTest.config().build();
+    final RelBuilder builder = RelBuilder.create(config);
+    final Holder<RexCorrelVariable> v = Holder.of(null);
+    RelNode relNode = builder.scan("EMP")
+        .variable(v)
+        .scan("DEPT")
+        .filter(
+            builder.equals(builder.field(0), builder.field(v.get(), "DEPTNO")))
+        .correlate(
+            JoinRelType.INNER, v.get().id, builder.field(2, 0, "DEPTNO"))
+        .build();
+    RelJsonWriter jsonWriter = new RelJsonWriter();
+    relNode.explain(jsonWriter);
+    final String relJson = jsonWriter.asString();
+    String s = deserializeAndDumpToTextFormat(getSchema(relNode), relJson);
+    final String expected = ""
+        + "LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{7}])\n"
+        + "  LogicalTableScan(table=[[scott, EMP]])\n"
+        + "  LogicalFilter(condition=[=($0, $cor0.DEPTNO)])\n"
+        + "    LogicalTableScan(table=[[scott, DEPT]])\n";
+
+    assertThat(s, isLinux(expected)
+    );
+  }
+
+  /** Returns the schema of a {@link org.apache.calcite.rel.core.TableScan}
+   * in this plan, or null if there are no scans. */
+  private RelOptSchema getSchema(RelNode rel) {
+    final Holder<RelOptSchema> schemaHolder = Holder.of(null);
+    rel.accept(
+        new RelShuttleImpl() {
+          @Override public RelNode visit(TableScan scan) {
+            schemaHolder.set(scan.getTable().getRelOptSchema());
+            return super.visit(scan);
+          }
+        });
+    return schemaHolder.get();
+  }
+
+  /**
+   * Deserialize a relnode from the json string by {@link RelJsonReader},
+   * and dump it to text format.
+   */
+  private String deserializeAndDumpToTextFormat(RelOptSchema schema, String relJson) {
+    String s =
+        Frameworks.withPlanner((cluster, relOptSchema, rootSchema) -> {
+          final RelJsonReader reader = new RelJsonReader(
+              cluster, schema, rootSchema);
+          RelNode node;
+          try {
+            node = reader.read(relJson);
+          } catch (IOException e) {
+            throw TestUtil.rethrow(e);
+          }
+          return RelOptUtil.dumpPlan("", node, SqlExplainFormat.TEXT,
+              SqlExplainLevel.EXPPLAN_ATTRIBUTES);
+        });
+    return s;
   }
 }
 
