@@ -24,7 +24,8 @@ public class CyclicMetadataException extends RuntimeException {
 /**
  * Creates a CyclicMetadataException.
  * Reusing a singleton instance is a bad idea because it will print wrong stack trace.
- * https://stackoverflow.com/questions/15090664/is-it-safe-to-store-an-instance-of-an-exception-and-reuse-it
+ * https://stackoverflow.com/questions/15090664/is-it-safe-to-store-an-instance-of-an-\
+ * exception-and-reuse-it
  */
   public CyclicMetadataException() {
     super();
