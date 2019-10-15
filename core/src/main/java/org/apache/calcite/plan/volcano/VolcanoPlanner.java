@@ -866,8 +866,10 @@ public class VolcanoPlanner extends AbstractRelOptPlanner {
 
     // Checking if tree is valid considerably slows down planning
     // Only doing it if logger level is debug or finer
-    // if (LOGGER.isDebugEnabled()) {
-    assert isValid(Litmus.THROW);
+    if (LOGGER.isDebugEnabled()) {
+      assert isValid(Litmus.THROW);
+    }
+
     return result;
   }
 
